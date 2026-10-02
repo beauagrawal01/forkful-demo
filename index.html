@@ -423,7 +423,12 @@ function customSheet(err=''){sheet(shHd('Customize')+`<label for="c_brand">Brand
  <button class="btn grey wide" data-act="editon">Replace images by tapping them</button>
  <label for="c_json">Stores and menus (JSON)<textarea id="c_json" class="code" spellcheck="false">${esc(JSON.stringify(STORES,null,1))}</textarea></label>${err?`<div class="note" style="color:var(--deal)">${esc(err)}</div>`:''}
  <div class="note">Each item is [name, price, description, placeholder glyph, original price]. Keep each store's "id" unchanged so carts and order history still match.</div>
- <button class="btn wide" data-act="applyjson">Apply stores and menus</button><button class="btn grey wide" data-act="factory">Restore factory defaults</button>`)}
+ <button class="btn wide" data-act="applyjson">Apply stores and menus</button>
+ <div class="note"><b>Move your settings to another copy of this app.</b> Settings are saved per web address, so the Claude link, the website and the Home Screen app each keep their own. Tap Copy in one, then paste below in the other and tap Apply.</div>
+ <button class="btn grey wide" data-act="exportset">Copy my settings</button>
+ <label for="c_imp">Paste settings here<textarea id="c_imp" class="code" spellcheck="false" placeholder="Paste the settings you copied"></textarea></label>
+ <button class="btn grey wide" data-act="importset">Apply pasted settings</button>
+ <button class="btn grey wide" data-act="factory">Restore factory defaults</button>`)}
 function addLine(sid,i,qty=1,size=0,ex=[],note=''){const f=st.cart.find(l=>l.sid===sid&&l.i===i&&l.size===size&&l.ex.join()===ex.join()&&!note&&!l.note);f?f.qty+=qty:st.cart.push({sid,i,qty,size,ex,note})}
 const go=r=>{st.stack.push(r);render()};
 
@@ -468,6 +473,11 @@ const A={
  editon:()=>{st.edit=true;sheet('');chrome()}, editoff:()=>{st.edit=false;chrome()},
  applyjson:()=>{try{const d=JSON.parse($('#c_json').value);if(!Array.isArray(d)||!d.every(s=>s.id&&s.name&&s.menu))throw new Error('Each store needs an id, a name and a menu.');const ids=new Set(d.map(s=>s.id));STORES=d;st.cart=st.cart.filter(l=>ids.has(l.sid)&&flat(store(l.sid))[l.i]);persist();sheet('');render(1);toast('Stores saved')}catch(err){customSheet('Could not apply: '+err.message)}},
  reset:()=>{seed();sheet('');render();toast('Demo reset. Your brand, messages, stores and images are kept.')},
+ exportset:()=>{const txt=JSON.stringify({forkful:1,C,STORES,ASSETS}),box=$('#c_imp'),fb=()=>{if(box){box.value=txt;box.focus();box.select();try{document.execCommand('copy')?toast('Settings copied'):toast('Select all in the box, then Copy')}catch(e){toast('Select all in the box, then Copy')}}};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(()=>toast('Settings copied'),fb);else fb()},
+ importset:()=>{try{const d=JSON.parse($('#c_imp').value.trim());if(!d||!d.forkful||!d.C)throw new Error('That does not look like copied settings.');
+  if(!Array.isArray(d.STORES)||!d.STORES.length||!d.STORES.every(x=>x&&x.id&&x.name&&x.menu))throw new Error('The stores in those settings are not valid.');
+  Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C),d.C);STORES=d.STORES;Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.assign(ASSETS,d.ASSETS||{});persist();seed();sheet('');render();toast('Settings applied')}catch(err){customSheet('Could not apply: '+err.message)}},
  factory:(a,b,el)=>{if(!el.dataset.sure){el.dataset.sure=1;el.textContent='Tap again to erase all my customizations';setTimeout(()=>{if(el.isConnected){delete el.dataset.sure;el.textContent='Restore factory defaults'}},4000);return}
   STORES=JSON.parse(DEFAULT_STORES);Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C));try{localStorage.removeItem(SAVE_KEY)}catch(e){}seed();sheet('');render();toast('Factory defaults restored')},
 };
@@ -481,7 +491,7 @@ $('#phone').addEventListener('input',e=>{const t=e.target;
  if(t.id==='q'){st.q=t.value;$('#results').innerHTML=searchBody()}
  else if(t.id==='note'&&sh)sh.note=t.value;
  else if(t.dataset.cfg){C[t.dataset.cfg]=t.value;persist();render(1)}});
-$('#filepick').addEventListener('change',e=>{const f=e.target.files[0];if(!f||!pickKey)return;const fr=new FileReader();fr.onload=()=>{ASSETS[pickKey]=fr.result;persist();render(1);toast('Image replaced')};fr.readAsDataURL(f);e.target.value=''});
+$('#filepick').addEventListener('change',e=>{const f=e.target.files[0];if(!f||!pickKey)return;const key=pickKey,fr=new FileReader(),done=u=>{ASSETS[key]=u;persist();render(1);toast('Image replaced')};fr.onload=()=>{const im=new Image();im.onload=()=>{try{const k=Math.min(1,900/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));const x=c.getContext('2d');x.drawImage(im,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data;let a=0;for(let i=3;i<d.length;i+=4)if(d[i]<250){a=1;break}done(c.toDataURL(a?'image/png':'image/jpeg',.85))}catch(err){done(fr.result)}};im.onerror=()=>done(fr.result);im.src=fr.result};fr.readAsDataURL(f);e.target.value=''});
 document.querySelector('.side').addEventListener('click',e=>{const k=e.target.dataset.side;if(k==='custom')A.custom();if(k==='edit'){st.edit=!st.edit;chrome()}if(k==='reset')A.reset();if(k==='adv')A.advance();if(k==='msgs'){A.custom();const t=$('#c_chat');if(t)t.scrollIntoView({block:'center'})}});
 let last='';
 setInterval(()=>{const done=st.active.filter(o=>o.fixed!=null?(o.fixed>=5&&Date.now()-(o.doneAt||0)>8000):Date.now()-o.placed>STAGE_MS*6);if(done.length){done.forEach(o=>st.history.unshift({sid:o.sid,date:'Today',total:o.total,lines:o.lines,rated:0,ask:1}));st.active=st.active.filter(o=>!done.includes(o))}
