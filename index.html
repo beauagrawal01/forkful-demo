@@ -251,23 +251,42 @@ const snap=()=>({dv:DV,t:Date.now(),C,STORES,ASSETS:userAssets()});
 let warned=0;
 function flush(){if(!persist.dirty)return;persist.dirty=false;clearTimeout(persist.t);const o=snap();let ls=1;
  try{localStorage.setItem(SAVE_KEY,JSON.stringify(o))}catch(e){ls=0;try{localStorage.setItem(SAVE_KEY,JSON.stringify({dv:o.dv,t:o.t,C,STORES,assetsIn:'idb'}))}catch(e2){}}
+ syncURL();applyManifest();
  idb.put('snap',o).catch(()=>{if(!ls&&!warned){warned=1;toast("This browser can't keep everything you changed. Use Copy my settings in Customize to back it up.")}})}
 function persist(){persist.dirty=true;clearTimeout(persist.t);persist.t=setTimeout(flush,400)}
 addEventListener('pagehide',flush);document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
-/* app icon: the Home Screen icon is read when the app is added, so we swap the page's icon links to the picked image */
+/* app icon + install identity. A Home Screen app gets its own empty storage, so what carries over is whatever is in the page URL, name and icon at the moment of "Add to Home Screen" */
 const ICON_LINK=()=>document.querySelector('link[rel="apple-touch-icon"]');
+const HOME_URL='https://beauagrawal01.github.io/forkful-demo/';
 function iconSrc(){if(ASSETS.appicon)return ASSETS.appicon;const l=ICON_LINK();return l?(l.dataset.orig||l.getAttribute('href')||''):''}
 function iconPrevHTML(){const u=iconSrc();return u?`<img src="${u}" alt="" width="64" height="64" style="border-radius:15px;border:1px solid var(--line);object-fit:cover;display:block">`:`<div style="width:64px;height:64px;border-radius:15px;border:1px solid var(--line);display:grid;place-items:center;font:700 26px var(--display);background:var(--surface)">${esc((C.brand||'F')[0].toUpperCase())}</div>`}
-let manURL=null;
-async function applyIcon(){const u=ASSETS.appicon;let ap=ICON_LINK();
+/* brand data and messages travel in the link as ?cfg= */
+const b64u=t=>btoa(unescape(encodeURIComponent(t))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64u=t=>decodeURIComponent(escape(atob(t.replace(/-/g,'+').replace(/_/g,'/'))));
+const cfgToken=()=>JSON.stringify(C)===DEFAULT_C?'':b64u(JSON.stringify({v:1,C}));
+function readCfg(){try{const q=new URLSearchParams(location.search).get('cfg');if(!q)return null;const d=JSON.parse(unb64u(q));if(!d||typeof d.C!=='object'||!d.C)return null;
+ const D=JSON.parse(DEFAULT_C),o={},str=v=>String(v).slice(0,300);
+ for(const k in D){const v=d.C[k];if(v==null)continue;
+  if(typeof D[k]==='string'&&typeof v==='string')o[k]=str(v);
+  else if(k==='chat'&&Array.isArray(v))o.chat=v.slice(0,40).filter(m=>m&&typeof m.t==='string').map(m=>({me:m.me?1:0,t:str(m.t)}));
+  else if(Array.isArray(D[k])&&Array.isArray(v))o[k]=v.slice(0,40).filter(x=>typeof x==='string').map(str)}
+ return Object.keys(o).length?o:null}catch(e){return null}}
+const isWebApp=()=>!!document.querySelector('link[rel="manifest"]');
+function installURL(){const base=isWebApp()?location.origin+location.pathname:HOME_URL,t=cfgToken();return base+(t?'?cfg='+t:'')}
+function syncURL(){try{if(!isWebApp())return;const u=new URL(location.href),t=cfgToken();if(t)u.searchParams.set('cfg',t);else u.searchParams.delete('cfg');history.replaceState(null,'',u.pathname+u.search+u.hash)}catch(e){}}
+let manBase=null,manURL=null;
+async function applyManifest(){const ml=document.querySelector('link[rel="manifest"]');
+ const tm=document.querySelector('meta[name="apple-mobile-web-app-title"]');if(tm)tm.setAttribute('content',C.brand||'App');
+ if(!ml)return;if(ml.dataset.orig===undefined)ml.dataset.orig=ml.getAttribute('href')||'';
+ try{const base=new URL(ml.dataset.orig,location.href);if(!manBase)manBase=await (await fetch(base)).json();const m=JSON.parse(JSON.stringify(manBase));
+  m.name=m.short_name=C.brand||m.name;m.scope=new URL(m.scope||'./',base).href;m.start_url=location.origin+location.pathname+location.search;
+  m.icons=ASSETS.appicon?[{src:ASSETS.appicon,sizes:'512x512',type:'image/png',purpose:'any'},{src:ASSETS.appicon,sizes:'192x192',type:'image/png',purpose:'any'},{src:ASSETS.appicon,sizes:'512x512',type:'image/png',purpose:'maskable'}]:(m.icons||[]).map(i=>({...i,src:new URL(i.src,base).href}));
+  const u=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));if(manURL)URL.revokeObjectURL(manURL);manURL=u;ml.setAttribute('href',u)}catch(e){}}
+function applyIcon(){const u=ASSETS.appicon;let ap=ICON_LINK();
  if(u){if(!ap){ap=document.createElement('link');ap.rel='apple-touch-icon';document.head.appendChild(ap)}if(ap.dataset.orig===undefined)ap.dataset.orig=ap.getAttribute('href')||'';ap.setAttribute('href',u)}
  else if(ap&&ap.dataset.orig!==undefined){if(ap.dataset.orig)ap.setAttribute('href',ap.dataset.orig);else ap.remove()}
- const ml=document.querySelector('link[rel="manifest"]');if(!ml)return;if(ml.dataset.orig===undefined)ml.dataset.orig=ml.getAttribute('href')||'';
- if(!u){ml.setAttribute('href',ml.dataset.orig);return}
- try{const base=new URL(ml.dataset.orig,location.href),m=await (await fetch(base)).json();m.start_url=new URL(m.start_url||'./',base).href;m.scope=new URL(m.scope||'./',base).href;
-  m.icons=[{src:u,sizes:'512x512',type:'image/png',purpose:'any'},{src:u,sizes:'192x192',type:'image/png',purpose:'any'},{src:u,sizes:'512x512',type:'image/png',purpose:'maskable'}];
-  if(manURL)URL.revokeObjectURL(manURL);manURL=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));ml.setAttribute('href',manURL)}catch(e){}}
+ syncURL();return applyManifest()}
 const refreshIconPrev=()=>{const w=$('#icowrap');if(w)w.innerHTML=iconPrevHTML()};
 function resetAll(){STORES=JSON.parse(DEFAULT_STORES);Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.assign(ASSETS,BASE_ASSETS);Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C))}
 function applySaved(d){if(!d)return;if(d.C)Object.assign(C,d.C);
@@ -289,6 +308,7 @@ let rawLS=null,LSD=null;
 try{rawLS=localStorage.getItem(SAVE_KEY);LSD=JSON.parse(rawLS||'null')}catch(e){}
 if(rawLS&&LSD&&(LSD.dv||1)<DV)idb.put('bak',{dv:LSD.dv||1,t:Date.now(),raw:rawLS}).catch(()=>{});
 applySaved(LSD);
+const CFG=readCfg();if(!LSD&&CFG){Object.assign(C,CFG);persist()}
 idb.get('snap').then(o=>{if(!o||!o.C||!Array.isArray(o.STORES))return;
  if(!LSD||(o.t||0)>(LSD.t||0)){resetAll();applySaved(o);seed();render();applyIcon();persist()}
  else if(LSD.assetsIn==='idb'&&o.t===LSD.t&&o.ASSETS){Object.assign(ASSETS,o.ASSETS);render(1);applyIcon()}}).catch(()=>{});
@@ -486,6 +506,8 @@ function customSheet(err=''){sheet(shHd('Customize')+`<label for="c_brand">Brand
  <div style="display:flex;gap:14px;align-items:center"><span id="icowrap">${iconPrevHTML()}</span><div class="note" style="margin:0"><b>App icon.</b> Pick a picture for the Home Screen icon. iPhone only reads the icon when the app is added, so remove the old one from your Home Screen and add the app again.</div></div>
  <button class="btn grey wide" data-act="iconpick">Change app icon</button>
  <button class="btn grey wide" data-act="iconreset">Use original icon</button>
+ <div class="note"><b>Add to Home Screen with your brand and messages.</b> A Home Screen app starts with its own empty storage, so it picks up your brand name, colors, names and messages from the link you add it from. Copy this link, open it in Safari, then Share > Add to Home Screen. (Menus and photos come over with Copy my settings below.)</div>
+ <button class="btn grey wide" data-act="copylink">Copy my install link</button>
  <label for="c_json">Stores and menus (JSON)<textarea id="c_json" class="code" spellcheck="false">${esc(JSON.stringify(STORES,null,1))}</textarea></label>${err?`<div class="note" style="color:var(--deal)">${esc(err)}</div>`:''}
  <div class="note">Each item is [name, price, description, placeholder glyph, original price]. Keep each store's "id" unchanged so carts and order history still match.</div>
  <button class="btn wide" data-act="applyjson">Apply stores and menus</button>
@@ -538,6 +560,8 @@ const A={
  custom:()=>customSheet(), close:()=>sheet(''), scrim:(a,b,el,e)=>{if(e.target===el)sheet('')},
  editon:()=>{st.edit=true;sheet('');chrome()}, editoff:()=>{st.edit=false;chrome()},
  iconpick:()=>$('#iconpick').click(),
+ copylink:()=>{const u=installURL(),box=$('#c_imp'),fb=()=>{if(box){box.value=u;box.focus();box.select();try{document.execCommand('copy')?toast('Install link copied'):toast('The link is in the box below. Select all, then Copy')}catch(e){toast('The link is in the box below. Select all, then Copy')}}};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(()=>toast('Install link copied'),fb);else fb()},
  iconreset:()=>{if(!ASSETS.appicon){toast('Already using the original icon');return}delete ASSETS.appicon;persist();applyIcon();refreshIconPrev();toast('Original icon restored')},
  restorebak:()=>{idb.get('bak').then(b=>{let d=null;try{d=b&&b.raw&&JSON.parse(b.raw)}catch(e){}if(!d){toast('No earlier backup found');return}
   resetAll();applySaved(d);persist();applyIcon();seed();sheet('');render();toast('Earlier settings restored')},()=>toast('No earlier backup found'))},
