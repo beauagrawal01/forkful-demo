@@ -111,6 +111,8 @@ h2{font:700 23px/1.15 var(--display);margin:0;letter-spacing:-.02em;text-wrap:ba
 .prog{display:flex;gap:7px;padding:16px}.prog i{flex:1;height:4px;background:var(--surface)}.prog i.on{background:var(--accent)}
 .float{position:absolute;top:14px;z-index:3;background:var(--bg);box-shadow:var(--shadow);border-radius:99px;height:44px;min-width:44px;padding:0 12px;display:flex;gap:6px;align-items:center;justify-content:center;font-weight:600}
 .irow{display:flex;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);cursor:pointer}.irow>div:first-child{flex:1;min-width:0}.irow .art{width:104px;height:104px;border-radius:12px;font-size:13px;flex:none}.irow .w{position:relative}
+html,body{overscroll-behavior-x:none}
+.sb{animation:sbk .24s ease-out}@keyframes sbk{from{transform:translateX(-26px);opacity:.55}to{transform:none;opacity:1}}@media (prefers-reduced-motion:reduce){.sb{animation:none}}
 .sechd{display:flex;align-items:center;gap:10px}.seclogo{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);flex:none;font-size:9px}
 .cartbar{position:absolute;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:9}
 .scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:40;display:flex;align-items:flex-end}
@@ -176,12 +178,12 @@ body{margin:0}
   <div id="chrome"></div>
   <div id="sheets"></div>
   <input type="file" id="filepick" accept="image/*" hidden>
+  <input type="file" id="iconpick" accept="image/*" hidden>
 </div>
 <aside class="side">
   <h1 id="sideName">Forkful</h1>
   <p>A working food-ordering prototype with a placeholder brand and made-up restaurants. Browse, add to cart, check out, and watch the order move through its stages.</p>
   <button data-side="custom">Customize brand and data</button>
-  <button class="alt" data-side="edit">Replace images</button>
   <button data-side="adv">Next order stage</button>
   <button class="alt" data-side="reset">Reset demo</button>
   <button class="alt" data-side="msgs">Edit messages</button>
@@ -223,7 +225,7 @@ STORES.push(
  rt('sunmkt','Sunny Market','🌞',50,50,{rating:4.8,reviews:'8,000+',menu:SUNMKT_MENU})
 );
 const DEFAULT_STORES=JSON.stringify(STORES);
-const DV=16; // bump when built-in stores or photos change
+const DV=17; // bump when built-in stores or photos change
 const NEW_STORES={3:['smashme']}; // built-in stores added in each version
 const RENAMES={4:[['saffron','Saffron & Spit','Spit on it']],5:[['tide','Tide Poke','Poke through']],6:[['bricklane','Brick Lane Pizza','Bricked Up Pizza'],['comal','El Comal Tacos','El Caliente Tacos']],7:[['saffron','Spit on it','Spit on It'],['tide','Poke through','Poke Through']]}; // renames applied to saved copies that still have the old name
 const OLD_SAFFRON={id:'saffron',name:'Spit on It',cuisine:'Rotisserie',eta:32,rating:4.8,reviews:'2,100+',emoji:'🍗',hue:36,tag:'Only on Forkful',award:'Best Overall',menu:{'Plates':[['Half Chicken Plate',21.5,'Rotisserie chicken, pita, hummus, pickles and a wedge salad.','🍗'],['Quarter Chicken Plate',16,'Dark or white meat with two sides.','🍗'],['Roasted Cauliflower Plate',15.5,'Tahini, herbs and chili crisp.','🥦']],'Sides':[['Hummus & Pita',8.5,'Topped with spiced chickpeas.','🧆'],['Schmaltzy Potatoes',7,'Roasted under the birds.','🥔'],['Pickle Plate',5,'House pickles and peppers.','🥒']],'Drinks':[['Mint Lemonade',4.5,'Fresh squeezed.','🍋']]}}; // previous built-in Spit on it menu (replaced in saved copies only if unedited)
@@ -241,8 +243,35 @@ const OLD_COOP={id:'coop',name:'Side Chick Hot Chicken',cuisine:'Wings',far:1,et
 /* saved settings: brand, data, messages, stores/menus and images survive Reset demo and (where the browser allows) a reload */
 const SAVE_KEY='forkful.demo.v1';
 const userAssets=()=>{const o={};for(const k in ASSETS)if(ASSETS[k]!==BASE_ASSETS[k])o[k]=ASSETS[k];return o};
-function persist(){clearTimeout(persist.t);persist.t=setTimeout(()=>{try{localStorage.setItem(SAVE_KEY,JSON.stringify({dv:DV,C,STORES,ASSETS:userAssets()}))}catch(e){try{localStorage.setItem(SAVE_KEY,JSON.stringify({dv:DV,C,STORES}));toast('Images are too large to keep after closing. Everything else is saved.')}catch(e2){}}},400)}
-(function(){try{const d=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');if(!d)return;if(d.C)Object.assign(C,d.C);
+/* IndexedDB keeps a second copy of everything, so a full localStorage or cleared site data never loses brand, messages, menus or images */
+const idb=(()=>{let db;const open=()=>db||(db=new Promise((res,rej)=>{try{const r=indexedDB.open('forkful-demo',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}}));
+ const tx=(mode,f)=>open().then(d=>new Promise((res,rej)=>{const t=d.transaction('kv',mode);let q;try{q=f(t.objectStore('kv'))}catch(e){return rej(e)}t.oncomplete=()=>res(q&&q.result);t.onerror=t.onabort=()=>rej(t.error)}));
+ return{put:(k,v)=>tx('readwrite',s=>s.put(v,k)),get:k=>tx('readonly',s=>s.get(k)),del:k=>tx('readwrite',s=>s.delete(k))}})();
+const snap=()=>({dv:DV,t:Date.now(),C,STORES,ASSETS:userAssets()});
+let warned=0;
+function flush(){if(!persist.dirty)return;persist.dirty=false;clearTimeout(persist.t);const o=snap();let ls=1;
+ try{localStorage.setItem(SAVE_KEY,JSON.stringify(o))}catch(e){ls=0;try{localStorage.setItem(SAVE_KEY,JSON.stringify({dv:o.dv,t:o.t,C,STORES,assetsIn:'idb'}))}catch(e2){}}
+ idb.put('snap',o).catch(()=>{if(!ls&&!warned){warned=1;toast("This browser can't keep everything you changed. Use Copy my settings in Customize to back it up.")}})}
+function persist(){persist.dirty=true;clearTimeout(persist.t);persist.t=setTimeout(flush,400)}
+addEventListener('pagehide',flush);document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+/* app icon: the Home Screen icon is read when the app is added, so we swap the page's icon links to the picked image */
+const ICON_LINK=()=>document.querySelector('link[rel="apple-touch-icon"]');
+function iconSrc(){if(ASSETS.appicon)return ASSETS.appicon;const l=ICON_LINK();return l?(l.dataset.orig||l.getAttribute('href')||''):''}
+function iconPrevHTML(){const u=iconSrc();return u?`<img src="${u}" alt="" width="64" height="64" style="border-radius:15px;border:1px solid var(--line);object-fit:cover;display:block">`:`<div style="width:64px;height:64px;border-radius:15px;border:1px solid var(--line);display:grid;place-items:center;font:700 26px var(--display);background:var(--surface)">${esc((C.brand||'F')[0].toUpperCase())}</div>`}
+let manURL=null;
+async function applyIcon(){const u=ASSETS.appicon;let ap=ICON_LINK();
+ if(u){if(!ap){ap=document.createElement('link');ap.rel='apple-touch-icon';document.head.appendChild(ap)}if(ap.dataset.orig===undefined)ap.dataset.orig=ap.getAttribute('href')||'';ap.setAttribute('href',u)}
+ else if(ap&&ap.dataset.orig!==undefined){if(ap.dataset.orig)ap.setAttribute('href',ap.dataset.orig);else ap.remove()}
+ const ml=document.querySelector('link[rel="manifest"]');if(!ml)return;if(ml.dataset.orig===undefined)ml.dataset.orig=ml.getAttribute('href')||'';
+ if(!u){ml.setAttribute('href',ml.dataset.orig);return}
+ try{const base=new URL(ml.dataset.orig,location.href),m=await (await fetch(base)).json();m.start_url=new URL(m.start_url||'./',base).href;m.scope=new URL(m.scope||'./',base).href;
+  m.icons=[{src:u,sizes:'512x512',type:'image/png',purpose:'any'},{src:u,sizes:'192x192',type:'image/png',purpose:'any'},{src:u,sizes:'512x512',type:'image/png',purpose:'maskable'}];
+  if(manURL)URL.revokeObjectURL(manURL);manURL=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));ml.setAttribute('href',manURL)}catch(e){}}
+const refreshIconPrev=()=>{const w=$('#icowrap');if(w)w.innerHTML=iconPrevHTML()};
+function resetAll(){STORES=JSON.parse(DEFAULT_STORES);Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.assign(ASSETS,BASE_ASSETS);Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C))}
+function applySaved(d){if(!d)return;if(d.C)Object.assign(C,d.C);
+ try{
  if(Array.isArray(d.STORES)&&d.STORES.length&&d.STORES.every(x=>x&&x.id&&x.name&&x.menu)){
   STORES=d.STORES;const sv=d.dv||1,fresh=id=>JSON.parse(DEFAULT_STORES).find(x=>x.id===id),mine=d.ASSETS||{};
   if(sv<13)STORES=STORES.filter(x=>!['sidedoor','comal','meridian','bulk','dayfield','thrift','greenleaf','volt'].includes(x.id));
@@ -254,11 +283,19 @@ function persist(){clearTimeout(persist.t);persist.t=setTimeout(()=>{try{localSt
    if(JSON.stringify(STORES[i])===JSON.stringify(o)){STORES[i]=fresh(id);Object.keys(mine).forEach(k=>{if(k.startsWith(pre))delete mine[k]})}
    else Object.keys(ASSETS).forEach(k=>{if(k.startsWith(pre)&&!(k in mine))delete ASSETS[k]})});
  }
- if(d.ASSETS)Object.assign(ASSETS,d.ASSETS)}catch(e){}})();
+ }catch(e){console.warn('settings upgrade',e)}
+ if(d.ASSETS)Object.assign(ASSETS,d.ASSETS)}
+let rawLS=null,LSD=null;
+try{rawLS=localStorage.getItem(SAVE_KEY);LSD=JSON.parse(rawLS||'null')}catch(e){}
+if(rawLS&&LSD&&(LSD.dv||1)<DV)idb.put('bak',{dv:LSD.dv||1,t:Date.now(),raw:rawLS}).catch(()=>{});
+applySaved(LSD);
+idb.get('snap').then(o=>{if(!o||!o.C||!Array.isArray(o.STORES))return;
+ if(!LSD||(o.t||0)>(LSD.t||0)){resetAll();applySaved(o);seed();render();applyIcon();persist()}
+ else if(LSD.assetsIn==='idb'&&o.t===LSD.t&&o.ASSETS){Object.assign(ASSETS,o.ASSETS);render(1);applyIcon()}}).catch(()=>{});
 
 /* ============ state ============ */
 let st;
-function seed(){st={stack:[{name:'home'}],mode:'Delivery',cart:[],favs:new Set(['saffron']),notif:3,q:'',otab:'all',edit:false,cats:new Set(),filt:new Set(),instr:'',chat:C.chat.map(m=>({...m})),ctip:0,chatOpen:false,
+function seed(){st={stack:[{name:'home'}],hist:[],mode:'Delivery',cart:[],favs:new Set(['saffron']),notif:3,q:'',otab:'all',edit:false,cats:new Set(),filt:new Set(),instr:'',chat:C.chat.map(m=>({...m})),ctip:0,chatOpen:false,
  active:[{id:1,sid:'coop',lines:[[0,1]],total:20.61,placed:Date.now()-10*60000,eta:41,fixed:1,stageAt:Date.now()-20000}],
  history:[{sid:'greenhouse',date:'Sep 28',total:27.26,lines:[[0,1]],rated:0,ask:1},{sid:'stack',date:'Sep 25',total:32.29,lines:[[3,1],[0,1]]},{sid:'coop',date:'Aug 27',total:27.41,lines:[[0,2]]}]};}
 seed();
@@ -268,6 +305,8 @@ const money=n=>'$'+n.toFixed(2);
 const store=id=>STORES.find(s=>s.id===id)||STORES[0];
 const flat=s=>Object.values(s.menu).flat();
 const cur=()=>st.stack[st.stack.length-1];
+const pushHist=()=>{st.hist.push({s:st.stack.slice(),m:st.mode,q:st.q});if(st.hist.length>30)st.hist.shift()};
+function goBack(){if(st.stack.length>1)st.stack.pop();else if(st.hist.length){const h=st.hist.pop();st.stack=h.s;st.mode=h.m;st.q=h.q}else if(cur().name!=='home')st.stack=[{name:'home'}];else return false;render();return true}
 const first=()=>C.user.trim().split(' ')[0];
 const P={home:'M4 11l8-7 8 7v9h-5v-6H9v6H4z',map:'M12 21s6-5.2 6-10a6 6 0 10-12 0c0 4.800 6 10 6 10z M10 11a2 2 0 104 0 2 2 0 10-4 0',search:'M4 11a7 7 0 1014 0 7 7 0 10-14 0 M20 20l-3.500-3.500',cart:'M3 4h2l2.400 11h10.200L20 7H6.200 M9 19.500a1 1 0 102 0 1 1 0 10-2 0 M16 19.500a1 1 0 102 0 1 1 0 10-2 0',user:'M8 8a4 4 0 108 0 4 4 0 10-8 0 M4 21c0-4 4-6 8-6s8 2 8 6',back:'M19 12H5 M11 6l-6 6 6 6',fwd:'M5 12h14 M13 6l6 6-6 6',x:'M6 6l12 12 M18 6L6 18',plus:'M12 5v14 M5 12h14',minus:'M5 12h14',heart:'M12 20s-7-4.400-7-10a4 4 0 017-2.600A4 4 0 0119 10c0 5.600-7 10-7 10z',bell:'M6 17v-6a6 6 0 1112 0v6l2 2H4z M10 21h4',down:'M6 9l6 6 6-6',right:'M9 6l6 6-6 6',clock:'M3 12a9 9 0 1018 0 9 9 0 10-18 0 M12 7v5l3 2',receipt:'M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6',wallet:'M3 7h16a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z M3 7l12-3v3 M16 13.500h2',star:'M12 3l2.700 5.600 6.100.800-4.500 4.300 1.100 6.100L12 16.900 6.600 19.800l1.100-6.100L3.200 9.400l6.100-.800z',help:'M3 12a9 9 0 1018 0 9 9 0 10-18 0 M9.500 9.500a2.500 2.500 0 114 2c-.900.600-1.500 1.100-1.500 2.200 M12 17h.010',pencil:'M4 20l1-4L16 5l3 3L8 19z',nav:'M20 4L4 11l7 2 2 7z',gear:'M9 12a3 3 0 106 0 3 3 0 10-6 0 M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.600 5.600l2.100 2.100 M16.300 16.300l2.100 2.100 M5.600 18.400l2.100-2.100 M16.300 7.700l2.100-2.100',tag:'M3 12V4h8l10 10-8 8z M7.500 8h.010',gift:'M4 11h16v9H4z M3 7h18v4H3z M12 7v13 M12 7c-2-4-6-3-5 0 M12 7c2-4 6-3 5 0',info:'M3 12a9 9 0 1018 0 9 9 0 10-18 0 M12 11v6 M12 7.500h.010',check:'M5 12l5 5 9-10',bolt:'M13 3L5 14h6l-1 7 8-11h-6z',shop:'M4 9l1-5h14l1 5 M5 9v11h14V9 M9 20v-6h6v6',phone:'M5 4h4l2 5-2.500 1.500a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z',thumb:'M7 11v9H4v-9z M7 11l4-7c1.500 0 2.500 1 2.500 2.500L13 10h5.500a2 2 0 012 2.300l-1 6a2 2 0 01-2 1.700H7',medal:'M7 13a5 5 0 1010 0 5 5 0 10-10 0 M9 4l3 4 3-4'};
 const ic=(n,z=22,fill)=>`<svg width="${z}" height="${z}" viewBox="0 0 24 24" fill="${fill?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[n]}"/></svg>`;
@@ -411,7 +450,7 @@ V.account=()=>{const row=(i,t,sub,act='page')=>`<button data-act="${act}" data-a
  return `<div class="pad" style="padding-top:22px;display:flex;justify-content:space-between;gap:12px"><div style="min-width:0"><h1 class="big">${esc(C.user)}</h1><span class="tag plain" style="display:inline-flex;gap:4px;margin:8px 0;color:var(--fg)">${ic('check',14)} Verified</span><br><button class="muted" data-act="page" data-a="Public reviews profile">Manage your public reviews profile ›</button></div><div class="avatar" data-asset="avatar" style="${ASSETS.avatar?`background:url('${ASSETS.avatar}') center/cover`:''}">${ASSETS.avatar?'':esc(C.user.split(' ').map(w=>w[0]).join('').slice(0,2))}</div></div>
  <div class="tiles" style="margin-top:16px"><button data-act="favs">${ic('heart',26)}Favorites</button><button data-act="wallet">${ic('wallet',26)}Wallet</button><button data-act="go" data-a="orders">${ic('receipt',26)}Orders</button></div>
  <button class="pcard" data-act="page" data-a="${esc(C.plus)}"><div><h3>${esc(C.plus)}</h3><span class="muted">$0 delivery fee and 5% off eligible pickup orders</span></div>${art('promo:plus','🎟️',300,'logo')}</button>
- <button class="pcard" data-act="custom"><div><h3>Customize this app</h3><span class="muted">Change the brand, colors, names, menus and images</span></div>${ic('pencil',26)}</button>
+ <button class="pcard" data-act="custom"><div><h3>Customize this app</h3><span class="muted">Change the brand, colors, names, menus and app icon</span></div>${ic('pencil',26)}</button>
  <div class="lst" style="margin-top:10px">${row('gear','Account settings')+row('user','Family','Shared accounts and spending limits')+row('heart','Lists','','favs')+row('tag','Promotions')+row('gift','Send a gift')+row('shop','Dine out reservations')+row('user','Invite friends','Get $15 off your order')+row('info','Privacy')+row('bell','Communication')+row('cart','Shopping preferences')+row('help','Help')+row('info','About','Prototype v1.0')}</div>`};
 V.page=r=>`<div class="hd"><button class="circ" data-act="back" aria-label="Back">${ic('back')}</button><h3>${esc(r.title)}</h3><span class="sp"></span></div><div class="pad" style="display:grid;gap:4px"><p class="muted">Settings for ${esc(r.title.toLowerCase())}. Changes apply to this demo session only.</p>${['Push notifications','Email updates','Personalized recommendations'].map((t,i)=>`<button class="opt ${i!==1?'on':''}" data-act="sw"><b>${t}</b><span class="sw"></span></button>`).join('')}</div>`;
 V.wallet=()=>`<div class="hd"><button class="circ" data-act="back" aria-label="Back">${ic('back')}</button><h3>Wallet</h3><span class="sp"></span></div><div class="pad" style="display:grid;gap:14px"><div class="box" style="margin:0;background:var(--surface)"><span class="muted">${esc(C.brand)} Cash</span><div class="big">$0.00</div></div><div><h3>Payment methods</h3><div class="opt on"><span><b>Demo card</b><br><span class="muted">Ending 0000 • placeholder, not a real card</span></span><span class="radio"></span></div></div><label for="promo" style="display:grid;gap:6px;font-weight:600">Promo code<input id="promo" type="text" placeholder="Enter a code" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px"></label><button class="btn grey wide" data-act="promo">Apply code</button></div>`;
@@ -444,7 +483,9 @@ function customSheet(err=''){sheet(shHd('Customize')+`<label for="c_brand">Brand
  <label for="c_rep">What the courier replies with (one per line, used in order)<textarea id="c_rep">${esc(C.replies.join('\n'))}</textarea></label>
  <button class="btn grey wide" data-act="applymsgs">Apply messages</button>
  <div style="display:flex;gap:16px"><label for="c_acc">Accent<input id="c_acc" data-cfg="accent" type="color" value="${C.accent||'#2a46c9'}"></label><label for="c_pc">Membership color<input id="c_pc" data-cfg="plusColor" type="color" value="${C.plusColor||'#a3248f'}"></label></div>
- <button class="btn grey wide" data-act="editon">Replace images by tapping them</button>
+ <div style="display:flex;gap:14px;align-items:center"><span id="icowrap">${iconPrevHTML()}</span><div class="note" style="margin:0"><b>App icon.</b> Pick a picture for the Home Screen icon. iPhone only reads the icon when the app is added, so remove the old one from your Home Screen and add the app again.</div></div>
+ <button class="btn grey wide" data-act="iconpick">Change app icon</button>
+ <button class="btn grey wide" data-act="iconreset">Use original icon</button>
  <label for="c_json">Stores and menus (JSON)<textarea id="c_json" class="code" spellcheck="false">${esc(JSON.stringify(STORES,null,1))}</textarea></label>${err?`<div class="note" style="color:var(--deal)">${esc(err)}</div>`:''}
  <div class="note">Each item is [name, price, description, placeholder glyph, original price]. Keep each store's "id" unchanged so carts and order history still match.</div>
  <button class="btn wide" data-act="applyjson">Apply stores and menus</button>
@@ -452,14 +493,15 @@ function customSheet(err=''){sheet(shHd('Customize')+`<label for="c_brand">Brand
  <button class="btn grey wide" data-act="exportset">Copy my settings</button>
  <label for="c_imp">Paste settings here<textarea id="c_imp" class="code" spellcheck="false" placeholder="Paste the settings you copied"></textarea></label>
  <button class="btn grey wide" data-act="importset">Apply pasted settings</button>
+ <button class="btn grey wide" data-act="restorebak">Restore settings from before the last update</button>
  <button class="btn grey wide" data-act="factory">Restore factory defaults</button>`)}
 function addLine(sid,i,qty=1,size=0,ex=[],note=''){const f=st.cart.find(l=>l.sid===sid&&l.i===i&&l.size===size&&l.ex.join()===ex.join()&&!note&&!l.note);f?f.qty+=qty:st.cart.push({sid,i,qty,size,ex,note})}
 const go=r=>{st.stack.push(r);render()};
 
 /* ============ actions ============ */
 const A={
- tab:a=>{if(a!=='search')st.q='';st.mode='Delivery';st.stack=[{name:a}];render()},
- back:()=>{st.stack.length>1?st.stack.pop():st.stack=[{name:'home'}];render()},
+ tab:a=>{if(!(st.stack.length===1&&cur().name===a))pushHist();if(a!=='search')st.q='';st.mode='Delivery';st.stack=[{name:a}];render()},
+ back:()=>{goBack()},
  go:a=>go({name:a}), store:a=>go({name:'store',sid:a}), list:(a,b)=>go({name:'list',title:a,ids:b.split(',')}),
  favs:()=>go({name:'list',title:'Favorites',ids:[...st.favs]}), wallet:()=>go({name:'wallet'}), page:a=>go({name:'page',title:a}),
  track:a=>go({name:'track',id:a}), checkout:a=>go({name:'checkout',sid:a,tip:3,speed:'Standard'}),
@@ -477,7 +519,7 @@ const A={
  place:()=>{const r=cur(),t=totals(r),ls=st.cart.filter(l=>l.sid===r.sid);if(!ls.length)return;const o={id:Date.now(),sid:r.sid,lines:ls.map(l=>[l.i,l.qty]),total:t.total,placed:Date.now(),eta:store(r.sid).eta-(r.speed==='Priority'?5:0)};st.active.push(o);st.cart=st.cart.filter(l=>l.sid!==r.sid);st.stack=[{name:'home'},{name:'track',id:o.id}];render();toast('Demo order placed')},
  reorder:a=>{const o=st.history[+a];o.lines.forEach(([i,q])=>addLine(o.sid,i,q));A.tab('cart');toast('Items added to your cart')},
  rate:(a,b)=>{st.history[+a].rated=+b;render(1);toast('Thanks for the rating')},
- otab:a=>{st.otab=a;render()}, q:a=>{st.q=a;st.stack=[{name:'search'}];render()},
+ otab:a=>{st.otab=a;render()}, q:a=>{if(!(st.stack.length===1&&cur().name==='search'))pushHist();st.q=a;st.stack=[{name:'search'}];render()},
  reserve:a=>toast('Table requested at '+store(a).name), offer:()=>toast('Offer saved to your account'), promo:()=>toast($('#promo').value.trim()?'That code is not valid in the demo':'Enter a code first'),
  sw:(a,b,el)=>el.classList.toggle('on'), details:()=>{cur().open=!cur().open;render(1)},
  notif:()=>{st.notif=0;chrome();sheet(shHd('Notifications')+[['Your order is being prepared',store(st.active[0]?.sid||'saffron').name],['Buy 1, get 1 this week',store('griddle').name],['Rate your last order',store('greenhouse').name]].map(([a,b])=>`<div class="opt"><span><b>${esc(a)}</b><br><span class="muted">${esc(b)}</span></span></div>`).join(''));render(1)},
@@ -495,15 +537,19 @@ const A={
  cancel:()=>{st.active=st.active.filter(o=>o.id!=cur().id);sheet('');A.tab('home');toast('Order canceled')},
  custom:()=>customSheet(), close:()=>sheet(''), scrim:(a,b,el,e)=>{if(e.target===el)sheet('')},
  editon:()=>{st.edit=true;sheet('');chrome()}, editoff:()=>{st.edit=false;chrome()},
+ iconpick:()=>$('#iconpick').click(),
+ iconreset:()=>{if(!ASSETS.appicon){toast('Already using the original icon');return}delete ASSETS.appicon;persist();applyIcon();refreshIconPrev();toast('Original icon restored')},
+ restorebak:()=>{idb.get('bak').then(b=>{let d=null;try{d=b&&b.raw&&JSON.parse(b.raw)}catch(e){}if(!d){toast('No earlier backup found');return}
+  resetAll();applySaved(d);persist();applyIcon();seed();sheet('');render();toast('Earlier settings restored')},()=>toast('No earlier backup found'))},
  applyjson:()=>{try{const d=JSON.parse($('#c_json').value);if(!Array.isArray(d)||!d.every(s=>s.id&&s.name&&s.menu))throw new Error('Each store needs an id, a name and a menu.');const ids=new Set(d.map(s=>s.id));STORES=d;st.cart=st.cart.filter(l=>ids.has(l.sid)&&flat(store(l.sid))[l.i]);persist();sheet('');render(1);toast('Stores saved')}catch(err){customSheet('Could not apply: '+err.message)}},
  reset:()=>{seed();sheet('');render();toast('Demo reset. Your brand, messages, stores and images are kept.')},
  exportset:()=>{const txt=JSON.stringify({forkful:1,C,STORES,ASSETS:userAssets()}),box=$('#c_imp'),fb=()=>{if(box){box.value=txt;box.focus();box.select();try{document.execCommand('copy')?toast('Settings copied'):toast('Select all in the box, then Copy')}catch(e){toast('Select all in the box, then Copy')}}};
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(()=>toast('Settings copied'),fb);else fb()},
  importset:()=>{try{const d=JSON.parse($('#c_imp').value.trim());if(!d||!d.forkful||!d.C)throw new Error('That does not look like copied settings.');
   if(!Array.isArray(d.STORES)||!d.STORES.length||!d.STORES.every(x=>x&&x.id&&x.name&&x.menu))throw new Error('The stores in those settings are not valid.');
-  Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C),d.C);STORES=d.STORES;Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.assign(ASSETS,BASE_ASSETS,d.ASSETS||{});persist();seed();sheet('');render();toast('Settings applied')}catch(err){customSheet('Could not apply: '+err.message)}},
+  Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C),d.C);STORES=d.STORES;Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.assign(ASSETS,BASE_ASSETS,d.ASSETS||{});persist();applyIcon();seed();sheet('');render();toast('Settings applied')}catch(err){customSheet('Could not apply: '+err.message)}},
  factory:(a,b,el)=>{if(!el.dataset.sure){el.dataset.sure=1;el.textContent='Tap again to erase all my customizations';setTimeout(()=>{if(el.isConnected){delete el.dataset.sure;el.textContent='Restore factory defaults'}},4000);return}
-  STORES=JSON.parse(DEFAULT_STORES);Object.keys(ASSETS).forEach(k=>delete ASSETS[k]);Object.assign(ASSETS,BASE_ASSETS);Object.keys(C).forEach(k=>delete C[k]);Object.assign(C,JSON.parse(DEFAULT_C));try{localStorage.removeItem(SAVE_KEY)}catch(e){}seed();sheet('');render();toast('Factory defaults restored')},
+  resetAll();try{localStorage.removeItem(SAVE_KEY)}catch(e){}persist.dirty=false;clearTimeout(persist.t);idb.del('snap').catch(()=>{});idb.del('bak').catch(()=>{});applyIcon();seed();sheet('');render();toast('Factory defaults restored')},
 };
 let pickKey=null;
 $('#phone').addEventListener('click',e=>{
@@ -522,5 +568,17 @@ setInterval(()=>{const done=st.active.filter(o=>o.fixed!=null?(o.fixed>=5&&Date.
  const sig=st.active.map(o=>o.id+':'+stage(o)).join();const r=cur();
  if(sig!==last){last=sig;if(!$('#sheets').innerHTML&&['track','orders','home'].includes(r.name))render(1);else chrome()}
  const cd=$('#cd'),o=st.active.find(o=>o.id==r.id);if(cd&&o)cd.textContent=countdown(o);placeCourier()},1000);
+$('#iconpick').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const fr=new FileReader();
+ fr.onload=()=>{const im=new Image();im.onload=()=>{try{let S=512,u='';for(let n=0;n<2;n++){const c=document.createElement('canvas');c.width=c.height=S;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,S,S);const k=Math.max(S/im.width,S/im.height),w=im.width*k,h=im.height*k;x.drawImage(im,(S-w)/2,(S-h)/2,w,h);u=c.toDataURL('image/png');if(u.length<900000)break;S=320}
+  ASSETS.appicon=u;persist();applyIcon();refreshIconPrev();toast('App icon updated')}catch(err){toast('Could not use that picture')}};im.onerror=()=>toast('Could not read that picture');im.src=fr.result};fr.readAsDataURL(f)});
+/* swipe right anywhere to go back to the last page */
+(function(){let sx=0,sy=0,t0=0,ok=false;const ph=$('#phone');
+ const blocked=el=>{for(let e=el;e&&e!==document.body;e=e.parentElement){const g=e.tagName;if(g==='INPUT'||g==='TEXTAREA'||g==='SELECT')return true;if(e.scrollWidth>e.clientWidth+4){const o=getComputedStyle(e).overflowX;if(o==='auto'||o==='scroll')return true}}return false};
+ ph.addEventListener('touchstart',e=>{ok=false;if(e.touches.length!==1||$('#sheets').innerHTML||st.edit||blocked(e.target))return;const t=e.touches[0];sx=t.clientX;sy=t.clientY;t0=Date.now();ok=true},{passive:true});
+ ph.addEventListener('touchcancel',()=>{ok=false},{passive:true});
+ ph.addEventListener('touchend',e=>{if(!ok)return;ok=false;const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
+  if(dx>70&&Math.abs(dy)<dx*.6&&Date.now()-t0<800&&goBack()){const sc=$('#screen');sc.classList.remove('sb');void sc.offsetWidth;sc.classList.add('sb');setTimeout(()=>sc.classList.remove('sb'),300)}},{passive:true})})();
+applyIcon();
+
 render();
 </script>

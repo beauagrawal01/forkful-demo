@@ -1,0 +1,31 @@
+{
+  "_note": "Default brand data and messages shipped with this version. Generated from index.html on each update. Edits you make inside the app are saved on your device; use Customize > Copy my settings to back them up.",
+  "brand": "Forkful",
+  "plus": "Forkful Plus",
+  "user": "Beau Agrawal",
+  "address": "248 Juniper St",
+  "accent": "",
+  "plusColor": "",
+  "courier": "Dario",
+  "plate": "7KLM215",
+  "car": "Silver hatchback",
+  "quick": [
+    "I'm outside",
+    "Leave it at the door",
+    "Thanks!"
+  ],
+  "replies": [
+    "Got it, thanks!",
+    "On my way to you now.",
+    "I'll message when I'm outside.",
+    "Sounds good!"
+  ],
+  "chat": [
+    {
+      "me": 0,
+      "t": "Hi! I'm picking up your order now."
+    }
+  ],
+  "arriveFrom": "2:15 PM",
+  "arriveTo": "2:17 PM"
+}
