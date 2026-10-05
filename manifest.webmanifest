@@ -1,7 +1,6 @@
 {
   "name": "Forkful",
   "short_name": "Forkful",
-  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

@@ -259,6 +259,7 @@ try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}ca
 /* app icon + install identity. A Home Screen app gets its own empty storage, so what carries over is whatever is in the page URL, name and icon at the moment of "Add to Home Screen" */
 const ICON_LINK=()=>document.querySelector('link[rel="apple-touch-icon"]');
 const HOME_URL='https://beauagrawal01.github.io/forkful-demo/';
+const linkStatus=()=>`This copy started ${BOOT.cfg?'from a link that carried your brand data':BOOT.saved?'from data saved on this device':'fresh, with the built-in defaults'}. Your install link ${cfgToken()?'carries your brand data and messages':'has nothing extra to carry yet, because nothing is customized'}.`;
 function iconSrc(){if(ASSETS.appicon)return ASSETS.appicon;const l=ICON_LINK();return l?(l.dataset.orig||l.getAttribute('href')||''):''}
 function iconPrevHTML(){const u=iconSrc();return u?`<img src="${u}" alt="" width="64" height="64" style="border-radius:15px;border:1px solid var(--line);object-fit:cover;display:block">`:`<div style="width:64px;height:64px;border-radius:15px;border:1px solid var(--line);display:grid;place-items:center;font:700 26px var(--display);background:var(--surface)">${esc((C.brand||'F')[0].toUpperCase())}</div>`}
 /* brand data and messages travel in the link as ?cfg= */
@@ -308,9 +309,9 @@ let rawLS=null,LSD=null;
 try{rawLS=localStorage.getItem(SAVE_KEY);LSD=JSON.parse(rawLS||'null')}catch(e){}
 if(rawLS&&LSD&&(LSD.dv||1)<DV)idb.put('bak',{dv:LSD.dv||1,t:Date.now(),raw:rawLS}).catch(()=>{});
 applySaved(LSD);
-const CFG=readCfg();if(!LSD&&CFG){Object.assign(C,CFG);persist()}
+const CFG=readCfg(),BOOT={cfg:!!(!LSD&&CFG),saved:!!LSD};if(!LSD&&CFG){Object.assign(C,CFG);persist()}
 idb.get('snap').then(o=>{if(!o||!o.C||!Array.isArray(o.STORES))return;
- if(!LSD||(o.t||0)>(LSD.t||0)){resetAll();applySaved(o);seed();render();applyIcon();persist()}
+ if(!LSD||(o.t||0)>(LSD.t||0)){BOOT.saved=1;resetAll();applySaved(o);seed();render();applyIcon();persist()}
  else if(LSD.assetsIn==='idb'&&o.t===LSD.t&&o.ASSETS){Object.assign(ASSETS,o.ASSETS);render(1);applyIcon()}}).catch(()=>{});
 
 /* ============ state ============ */
@@ -507,7 +508,9 @@ function customSheet(err=''){sheet(shHd('Customize')+`<label for="c_brand">Brand
  <button class="btn grey wide" data-act="iconpick">Change app icon</button>
  <button class="btn grey wide" data-act="iconreset">Use original icon</button>
  <div class="note"><b>Add to Home Screen with your brand and messages.</b> A Home Screen app starts with its own empty storage, so it picks up your brand name, colors, names and messages from the link you add it from. Copy this link, open it in Safari, then Share > Add to Home Screen. (Menus and photos come over with Copy my settings below.)</div>
+ <div class="note" id="linkstat">${linkStatus()}</div>
  <button class="btn grey wide" data-act="copylink">Copy my install link</button>
+ <button class="btn grey wide" data-act="openlink">Open install page</button>
  <label for="c_json">Stores and menus (JSON)<textarea id="c_json" class="code" spellcheck="false">${esc(JSON.stringify(STORES,null,1))}</textarea></label>${err?`<div class="note" style="color:var(--deal)">${esc(err)}</div>`:''}
  <div class="note">Each item is [name, price, description, placeholder glyph, original price]. Keep each store's "id" unchanged so carts and order history still match.</div>
  <button class="btn wide" data-act="applyjson">Apply stores and menus</button>
@@ -560,6 +563,7 @@ const A={
  custom:()=>customSheet(), close:()=>sheet(''), scrim:(a,b,el,e)=>{if(e.target===el)sheet('')},
  editon:()=>{st.edit=true;sheet('');chrome()}, editoff:()=>{st.edit=false;chrome()},
  iconpick:()=>$('#iconpick').click(),
+ openlink:()=>{const w=window.open(installURL(),'_blank');if(!w)toast('Could not open it. Use Copy my install link instead.')},
  copylink:()=>{const u=installURL(),box=$('#c_imp'),fb=()=>{if(box){box.value=u;box.focus();box.select();try{document.execCommand('copy')?toast('Install link copied'):toast('The link is in the box below. Select all, then Copy')}catch(e){toast('The link is in the box below. Select all, then Copy')}}};
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(u).then(()=>toast('Install link copied'),fb);else fb()},
  iconreset:()=>{if(!ASSETS.appicon){toast('Already using the original icon');return}delete ASSETS.appicon;persist();applyIcon();refreshIconPrev();toast('Original icon restored')},
