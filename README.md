@@ -7,6 +7,8 @@ A clickable food-ordering prototype with a placeholder brand ("Forkful") and mad
 
 ## Your settings survive updates
 
+On the Claude page, brand data, names and messages are also kept in the page's own database, so they carry through every update. On each update the latest saved values are baked into `index.html` as the default brand data and messages (`const BAKED`), so any fresh install starts with them, and you can still change them afterwards in Customize.
+
 Brand, names, colors, the starting conversation, quick replies, courier replies, stores and menus, photos and the app icon are saved on your device (browser storage plus an IndexedDB copy). Updating the app never overwrites them: edited stores are kept, only untouched built-in ones get new content. Before a new version first runs, the previous settings are backed up on the device (Customize > Restore settings from before the last update).
 
 A Home Screen app on iPhone starts with its own empty storage, so brand data and messages are carried in the link you add it from (`?cfg=`). Open Customize > Copy my install link, open that link in Safari, then Share > Add to Home Screen. The Home Screen name follows your brand name. Menus and photos carry over with Copy my settings.
